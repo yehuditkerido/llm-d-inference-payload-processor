@@ -46,6 +46,11 @@ test-coverage: ## Run tests with coverage report
 	go test -race -coverprofile=coverage.out -covermode=atomic ./...
 	go tool cover -html=coverage.out -o coverage.html
 
+.PHONY: bench
+bench: ## Run benchmarks with memory stats (5 iterations)
+	go test -run='^$$' -bench=. -benchmem -count=5 -timeout=10m \
+		./pkg/modelselector/ ./pkg/handlers/
+
 .PHONY: lint
 lint: lint-go ## Run all linters
 

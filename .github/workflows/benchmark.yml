@@ -1,0 +1,82 @@
+name: Benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'pkg/**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run benchmarks on PR branch
+        run: |
+          make bench > /tmp/new.txt
+          echo "=== PR Branch Benchmarks ==="
+          cat /tmp/new.txt
+
+      - name: Run benchmarks on base branch
+        run: |
+          git checkout ${{ github.event.pull_request.base.sha }}
+          # TODO: remove go test fallback after make bench target is merged to main
+          make bench > /tmp/old.txt 2>/dev/null || \
+            go test -run='^$' -bench=. -benchmem -count=5 -timeout=10m \
+              ./pkg/modelselector/ ./pkg/handlers/ > /tmp/old.txt 2>/dev/null || \
+            echo "No benchmarks on base branch" > /tmp/old.txt
+          echo "=== Base Branch Benchmarks ==="
+          cat /tmp/old.txt
+          git checkout ${{ github.event.pull_request.head.sha }}
+
+      - name: Generate report
+        id: report
+        run: |
+          # Generate report and detect regressions (threshold: 20%)
+          bash .github/scripts/benchmark-report.sh \
+            /tmp/old.txt /tmp/new.txt /tmp/report.md 20 \
+            | tee /tmp/regression_output
+          
+          # Capture regression status from script output
+          grep "regression=" /tmp/regression_output >> $GITHUB_OUTPUT
+
+      - name: Post results and label regression
+        uses: actions/github-script@v7
+        env:
+          REGRESSION: ${{ steps.report.outputs.regression }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const body = fs.readFileSync('/tmp/report.md', 'utf8');
+            
+            // Post or update comment
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes('## Benchmark Results'));
+            
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+            
+            // Add label if regression detected
+            if (process.env.REGRESSION === 'true') {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['perf-regression'] });
+            }
