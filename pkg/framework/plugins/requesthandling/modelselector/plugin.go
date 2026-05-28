@@ -29,6 +29,7 @@ import (
 	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/modelselector"
 	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/plugin"
 	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/interface/requesthandling"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/modelselector/picker/maxscore"
 	ms "github.com/llm-d/llm-d-inference-payload-processor/pkg/modelselector"
 )
 
@@ -43,29 +44,58 @@ var _ requesthandling.RequestProcessor = &ModelSelectorPlugin{}
 
 // ModelSelectorPluginFactory is the factory function for the ModelSelector RequestProcessor plugin.
 func ModelSelectorPluginFactory(name string, _ json.RawMessage, handle plugin.Handle) (plugin.Plugin, error) {
-	return NewModelSelectorPlugin(handle.Datastore())
+	return NewModelSelectorPlugin(handle)
 }
 
 // NewModelSelectorPlugin creates a ModelSelector RequestProcessor plugin.
 // Candidate models are read from the Datastore on each request.
-func NewModelSelectorPlugin(ds datalayer.Datastore) (*ModelSelectorPlugin, error) {
-	if ds == nil {
+// Filter, Scorer, and Picker plugins are sourced from the handle; if no Picker is present,
+// MaxScorePicker is used as the default.
+func NewModelSelectorPlugin(handle plugin.Handle) (*ModelSelectorPlugin, error) {
+	if handle.Datastore() == nil {
 		return nil, fmt.Errorf("datastore is required for '%s' plugin", ModelSelectorPluginType)
 	}
 
-	// Build profile with picker only.
-	// Filters and scorers can be added via WithFilters() / WithScorers()
-	// once implementations are available.
-	profile := ms.NewModelSelectorProfile().
-		WithPicker(&defaultPicker{})
-
-	selector := ms.NewModelSelector(profile)
+	profile, err := buildModelSelectorProfile(handle)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build model selector profile: %w", err)
+	}
 
 	return &ModelSelectorPlugin{
 		typedName: plugin.TypedName{Type: ModelSelectorPluginType, Name: ModelSelectorPluginType},
-		selector:  selector,
-		datastore: ds,
+		selector:  ms.NewModelSelector(profile),
+		datastore: handle.Datastore(),
 	}, nil
+}
+
+// buildModelSelectorProfile inspects all plugins in the handle and adds them to the profile
+// via AddPlugins. Scorers are pre-wrapped with a default weight of 1.0 as required by AddPlugins.
+// If no Picker plugin is found, MaxScorePicker is used as the default.
+func buildModelSelectorProfile(handle plugin.Handle) (*ms.ModelSelectorProfile, error) {
+	profile := ms.NewModelSelectorProfile()
+
+	var hasPicker bool
+	var pluginsToAdd []plugin.Plugin
+	for _, plug := range handle.GetAllPlugins() {
+		if s, ok := plug.(modelselector.Scorer); ok {
+			pluginsToAdd = append(pluginsToAdd, ms.NewWeightedScorer(s, 1.0))
+		} else {
+			pluginsToAdd = append(pluginsToAdd, plug)
+		}
+		if _, ok := plug.(modelselector.Picker); ok {
+			hasPicker = true
+		}
+	}
+
+	if err := profile.AddPlugins(pluginsToAdd...); err != nil {
+		return nil, err
+	}
+
+	if !hasPicker {
+		profile.WithPicker(maxscore.NewMaxScorePicker())
+	}
+
+	return profile, nil
 }
 
 // ModelSelectorPlugin is a RequestProcessor that runs the ModelSelector
@@ -113,26 +143,4 @@ func (p *ModelSelectorPlugin) loadCandidateModels() []datalayer.Model {
 		candidates[i] = p.datastore.GetOrCreateModel(name)
 	}
 	return candidates
-}
-
-// defaultPicker picks the model with the highest score.
-// Replace with MaxScorePicker or WeightedRandomPicker once PR #74
-// pickers are wired with factory functions.
-type defaultPicker struct{}
-
-func (p *defaultPicker) TypedName() plugin.TypedName {
-	return plugin.TypedName{Type: "default-picker", Name: "default-picker"}
-}
-
-func (p *defaultPicker) Pick(_ context.Context, _ *plugin.CycleState, scoredModels []*modelselector.ScoredModel) *modelselector.ProfileRunResult {
-	if len(scoredModels) == 0 {
-		return nil
-	}
-	best := scoredModels[0]
-	for _, sm := range scoredModels[1:] {
-		if sm.Score > best.Score {
-			best = sm
-		}
-	}
-	return &modelselector.ProfileRunResult{TargetModel: best.Model}
 }
