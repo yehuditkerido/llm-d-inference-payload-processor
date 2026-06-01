@@ -1,3 +1,5 @@
+# Automatically applies kind/* labels to PRs based on /kind commands in the PR body.
+# Uses awk state machine to skip /kind lines inside HTML comments (from PR template).
 name: Apply kind labels from PR body
 
 on:
