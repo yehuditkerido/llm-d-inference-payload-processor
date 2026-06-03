@@ -64,8 +64,7 @@ var setupLog = ctrl.Log.WithName("setup")
 func NewRunner() *Runner {
 	return &Runner{
 		payloadProcessorExecutableName: "payload-processor",
-		requestPlugins:                 []requesthandling.RequestProcessor{},
-		responsePlugins:                []requesthandling.ResponseProcessor{},
+		profiles:                       map[string]*requesthandling.Profile{},
 		customCollectors:               []prometheus.Collector{},
 	}
 }
@@ -73,12 +72,10 @@ func NewRunner() *Runner {
 // Runner is used to run payload processor with its plugins
 type Runner struct {
 	payloadProcessorExecutableName string
-	// request processing plugin instances executed by the request handler,
-	// in the same order the plugin flags are provided.
-	requestPlugins []requesthandling.RequestProcessor
-	// response processing plugin instances executed by the response handler,
-	// in the same order the plugin flags are provided.
-	responsePlugins []requesthandling.ResponseProcessor
+	// profilePicker is the profile picker instantiated as specified in the configuration
+	profilePicker requesthandling.ProfilePicker
+	// profiles is the set of named profiles loaded from the configuration
+	profiles map[string]*requesthandling.Profile
 
 	customCollectors    []prometheus.Collector
 	notificationSources []datasource.NotificationSource
@@ -202,10 +199,10 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	// Setup ExtProc Server Runner.
 	serverRunner := &runserver.ExtProcServerRunner{
-		GrpcPort:        opts.GRPCPort,
-		SecureServing:   opts.SecureServing,
-		RequestPlugins:  r.requestPlugins,
-		ResponsePlugins: r.responsePlugins,
+		GrpcPort:      opts.GRPCPort,
+		SecureServing: opts.SecureServing,
+		ProfilePicker: r.profilePicker,
+		Profiles:      r.profiles,
 	}
 
 	// Register health server.
@@ -252,16 +249,8 @@ func (r *Runner) loadConfiguration(ctx context.Context, opts *runserver.Options,
 		return err
 	}
 
-	// Hack for now until the ProfilePicker is supported
-	var profileName = ""
-	for name := range theConfig.Profiles {
-		profileName = name
-		break
-	}
-	logger.Info("Running with", "profile", profileName)
-
-	r.requestPlugins = theConfig.Profiles[profileName].RequestPlugins
-	r.responsePlugins = theConfig.Profiles[profileName].ResponsePlugins
+	r.profilePicker = theConfig.ProfilePicker
+	r.profiles = theConfig.Profiles
 	r.notificationSources = theConfig.NotificationSources
 
 	return nil
