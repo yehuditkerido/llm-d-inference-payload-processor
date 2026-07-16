@@ -59,6 +59,7 @@ import (
 	sessionaffinity "github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/modelselector/scorer/sessionaffinity"
 	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/requesthandling/basemodelextractor"
 	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/requesthandling/bodyfieldtoheader"
+	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/requesthandling/modelproviderresolver"
 	modelselectorplugin "github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/requesthandling/modelselector"
 	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/requesthandling/profilepicker/single"
 	"github.com/llm-d/llm-d-inference-payload-processor/pkg/framework/plugins/responsehandling/modelnametoheader"
@@ -294,6 +295,7 @@ func (r *Runner) registerInTreePlugins() {
 	plugin.Register(single.SingleProfilePickerType, single.SingleProfilePickerFactory)
 	plugin.Register(bodyfieldtoheader.BodyFieldToHeaderPluginType, bodyfieldtoheader.BodyFieldToHeaderPluginFactory)
 	plugin.Register(basemodelextractor.BaseModelToHeaderPluginType, basemodelextractor.BaseModelToHeaderPluginFactory)
+	plugin.Register(modelproviderresolver.ModelProviderResolverPluginType, modelproviderresolver.ModelProviderResolverPluginFactory)
 	plugin.Register(requestmetadata.PluginType, requestmetadata.ExtractorFactory)
 	plugin.Register(requestcostmetadata.PluginType, requestcostmetadata.ExtractorFactory)
 	plugin.Register(modelconfigcollector.PluginType, modelconfigcollector.DatasourceFactory)
