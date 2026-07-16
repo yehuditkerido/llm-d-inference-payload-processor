@@ -113,3 +113,16 @@ func (s *infoStore) getModel(key types.NamespacedName) (*externalModelInfo, bool
 	info, ok := modelsByNamespace[key.Name]
 	return info, ok
 }
+
+// getProviderByEndpoint finds a provider by its endpoint URL.
+// Used when EPP has selected an endpoint and we need credentials for that specific endpoint.
+func (s *infoStore) getProviderByEndpoint(endpoint string) (*providerInfo, bool) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	for _, info := range s.providers {
+		if info.endpoint == endpoint {
+			return info, true
+		}
+	}
+	return nil, false
+}
