@@ -53,6 +53,53 @@ func TestInfoStore_Provider(t *testing.T) {
 	}
 }
 
+func TestInfoStore_GetProviderByEndpoint(t *testing.T) {
+	store := newInfoStore()
+
+	spoke1 := &providerInfo{
+		provider:        "spoke1",
+		endpoint:        "maas.apps.spoke1.example.com",
+		secretName:      "spoke1-credentials",
+		secretNamespace: "hub-secrets",
+	}
+	spoke2 := &providerInfo{
+		provider:        "spoke2",
+		endpoint:        "maas.apps.spoke2.example.com",
+		secretName:      "spoke2-credentials",
+		secretNamespace: "hub-secrets",
+	}
+
+	store.addOrUpdateProvider(types.NamespacedName{Namespace: "default", Name: "spoke1"}, spoke1)
+	store.addOrUpdateProvider(types.NamespacedName{Namespace: "default", Name: "spoke2"}, spoke2)
+
+	// Find spoke1 by endpoint
+	got, found := store.getProviderByEndpoint("maas.apps.spoke1.example.com")
+	if !found {
+		t.Fatal("spoke1 not found by endpoint")
+	}
+	if got.provider != "spoke1" {
+		t.Errorf("provider = %s, want spoke1", got.provider)
+	}
+	if got.secretName != "spoke1-credentials" {
+		t.Errorf("secretName = %s, want spoke1-credentials", got.secretName)
+	}
+
+	// Find spoke2 by endpoint
+	got, found = store.getProviderByEndpoint("maas.apps.spoke2.example.com")
+	if !found {
+		t.Fatal("spoke2 not found by endpoint")
+	}
+	if got.provider != "spoke2" {
+		t.Errorf("provider = %s, want spoke2", got.provider)
+	}
+
+	// Unknown endpoint returns not found
+	_, found = store.getProviderByEndpoint("unknown.example.com")
+	if found {
+		t.Error("unknown endpoint should not be found")
+	}
+}
+
 func TestInfoStore_Model(t *testing.T) {
 	store := newInfoStore()
 	key := types.NamespacedName{Namespace: "tenant-ns", Name: "my-model"}

@@ -28,6 +28,10 @@ const (
 	InputAPIFormatKey = "input-api-format"
 )
 
+// DestinationEndpointHeader is the header set by EPP with the selected endpoint.
+// When present, the resolver uses endpoint-based lookup instead of model-based.
+const DestinationEndpointHeader = "x-gateway-destination-endpoint"
+
 // APIFormat identifies the API format for request/response translation.
 type APIFormat string
 

@@ -114,8 +114,38 @@ func (p *ModelProviderResolverPlugin) WithName(name string) *ModelProviderResolv
 	return p
 }
 
-// ProcessRequest resolves the model from the path and writes provider info to CycleState.
+// ProcessRequest resolves credentials either by endpoint (if EPP selected one) or by model path.
 func (p *ModelProviderResolverPlugin) ProcessRequest(ctx context.Context, cycleState *plugin.CycleState, request *requesthandling.InferenceRequest) error {
+	// Check if EPP has selected an endpoint - if so, resolve by endpoint
+	if endpoint := request.Headers[DestinationEndpointHeader]; endpoint != "" {
+		return p.resolveByEndpoint(ctx, cycleState, endpoint)
+	}
+
+	// Otherwise, resolve by model path (existing behavior)
+	return p.resolveByModelPath(ctx, cycleState, request)
+}
+
+// resolveByEndpoint looks up provider credentials by the endpoint selected by EPP.
+func (p *ModelProviderResolverPlugin) resolveByEndpoint(ctx context.Context, cycleState *plugin.CycleState, endpoint string) error {
+	logger := log.FromContext(ctx).V(logutil.DEFAULT)
+
+	providerInfo, found := p.store.getProviderByEndpoint(endpoint)
+	if !found {
+		logger.V(logutil.VERBOSE).Info("no provider found for endpoint, passing through", "endpoint", endpoint)
+		return nil
+	}
+
+	cycleState.Write(ProviderKey, providerInfo.provider)
+	cycleState.Write(CredsRefName, providerInfo.secretName)
+	cycleState.Write(CredsRefNamespace, providerInfo.secretNamespace)
+	cycleState.Write(ModelConfigKey, providerInfo.config)
+
+	logger.Info("resolved provider by endpoint", "endpoint", endpoint, "provider", providerInfo.provider)
+	return nil
+}
+
+// resolveByModelPath resolves credentials by parsing the model from the request path.
+func (p *ModelProviderResolverPlugin) resolveByModelPath(ctx context.Context, cycleState *plugin.CycleState, request *requesthandling.InferenceRequest) error {
 	logger := log.FromContext(ctx).V(logutil.DEFAULT)
 
 	model, ok := request.Body["model"].(string)
